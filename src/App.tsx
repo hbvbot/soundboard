@@ -1,14 +1,15 @@
 import { Button } from "@blueprintjs/core";
 import "@blueprintjs/core/lib/css/blueprint.css";
 import "@blueprintjs/icons/lib/css/blueprint-icons.css";
-import { IpcRenderer } from "electron";
-import { Component } from "react";
 import * as React from "react";
+import Dropzone from "react-dropzone";
 import { Devices } from "./components/Devices";
 import FilePicker from "./components/FilePicker";
 
+import { IpcRenderer } from "electron";
+import { last } from "ramda";
 import { TrackList } from "./components/TrackList";
-import { getSoundFileAsDataURI } from "./helpers";
+import { getTrackDataFromFile } from "./helpers";
 import { keycodeNames } from "./keycodes";
 import {
   getInitialAppState,
@@ -18,7 +19,15 @@ import {
   updateStopKeyInStateStore,
   updateTracksInStores
 } from "./store";
-import { AudioElement, IOHookKeydownEvent, OutputNumber, Outputs, Track } from "./types";
+import {
+  AudioElement,
+  IOHookKeydownEvent,
+  OutputNumber,
+  Outputs,
+  Track,
+  UNSET_KEYCODE,
+  VALID_EXTENSIONS
+} from "./types";
 const electron = window.require("electron");
 
 declare var Audio: {
@@ -36,13 +45,13 @@ export interface AppState {
   outputs: Outputs;
   sources: AudioBufferSourceNode[];
   stopKey: number;
+  dropzoneActive: boolean;
 }
 
 const codeType = window.process.platform === "darwin" ? "keycode" : "rawcode";
 const ESCAPE_KEY = window.process.platform === "darwin" ? 1 : 27;
-const UNSET_KEYCODE = -1;
 
-class App extends Component<{}, AppState> {
+class App extends React.Component<{}, AppState> {
   playingTracks: AudioElement[];
 
   constructor(props: {}) {
@@ -57,7 +66,8 @@ class App extends Component<{}, AppState> {
       listeningForKey: false,
       outputs: [Object.create(MediaDeviceInfo), Object.create(MediaDeviceInfo)],
       sources: [],
-      stopKey: UNSET_KEYCODE
+      stopKey: UNSET_KEYCODE,
+      dropzoneActive: false
     });
   }
 
@@ -123,18 +133,8 @@ class App extends Component<{}, AppState> {
   }
 
   onTrackReceived = (file: File) => {
-    getSoundFileAsDataURI(file).then((soundBinary: string) => {
-      const tracks = [
-        ...this.state.tracks,
-        {
-          id: `_${Math.random()
-            .toString(36)
-            .substr(2, 9)}`,
-          file: soundBinary,
-          name: file.name,
-          keycode: UNSET_KEYCODE
-        }
-      ];
+    getTrackDataFromFile(file).then((track: Track) => {
+      const tracks = [...this.state.tracks, track];
       this.setState({ tracks });
       updateTracksInStores(tracks);
     });
@@ -223,27 +223,60 @@ class App extends Component<{}, AppState> {
     );
   };
 
+  onDrop = (acceptedFiles: File[]) => {
+    console.log("Hello there");
+    const validAudioFiles = acceptedFiles.filter(file => {
+      const extension = last(file.name.split(".")) || "";
+      return VALID_EXTENSIONS.includes(extension);
+    });
+    const filePromises = validAudioFiles.map(file => getTrackDataFromFile(file));
+    Promise.all(filePromises).then(tracks => {
+      const updatedTracks = [...this.state.tracks, ...tracks];
+      this.setState({ tracks: updatedTracks });
+      updateTracksInStores(updatedTracks);
+    });
+  };
+
+  onDragEnter() {
+    this.setState({
+      dropzoneActive: true
+    });
+  }
+
+  onDragLeave() {
+    this.setState({
+      dropzoneActive: false
+    });
+  }
+
   render() {
     return (
-      <div className="App">
-        <Devices
-          devices={Object.values(this.state.devices)}
-          outputs={this.state.outputs}
-          onItemSelect={this.onDeviceSelect}
-        />
-        <FilePicker extensions={["wav", "mp3", "ogg"]} onChange={this.onTrackReceived} onError={this.logFileError}>
-          <Button text="Add Sound" />
-        </FilePicker>
-        {this.renderStop()}
-        <TrackList
-          tracks={this.state.tracks}
-          trackChanging={this.state.trackChanging}
-          listeningForKey={this.state.listeningForKey}
-          playSound={this.playSound}
-          changeTrackKey={this.changeTrackKey}
-          deleteTrack={this.deleteTrack}
-        />
-      </div>
+      <Dropzone
+        // style={{ position: "relative" }}
+        onDrop={this.onDrop}
+        onDragEnter={this.onDragEnter}
+        onDragLeave={this.onDragLeave}
+      >
+        <div className="App">
+          <Devices
+            devices={Object.values(this.state.devices)}
+            outputs={this.state.outputs}
+            onItemSelect={this.onDeviceSelect}
+          />
+          <FilePicker extensions={VALID_EXTENSIONS} onChange={this.onTrackReceived} onError={this.logFileError}>
+            <Button text="Add Sound" />
+          </FilePicker>
+          {this.renderStop()}
+          <TrackList
+            tracks={this.state.tracks}
+            trackChanging={this.state.trackChanging}
+            listeningForKey={this.state.listeningForKey}
+            playSound={this.playSound}
+            changeTrackKey={this.changeTrackKey}
+            deleteTrack={this.deleteTrack}
+          />
+        </div>
+      </Dropzone>
     );
   }
 }

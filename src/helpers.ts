@@ -1,4 +1,6 @@
-export const getSoundFileAsDataURI = (soundFile: File): Promise<string> =>
+import { Track, UNSET_KEYCODE } from "./types";
+
+const getSoundFileAsDataURI = (soundFile: File): Promise<string> =>
   new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = function() {
@@ -16,3 +18,15 @@ export const getSoundFileAsDataURI = (soundFile: File): Promise<string> =>
     };
     reader.readAsArrayBuffer(soundFile);
   });
+
+export const getTrackDataFromFile = async (soundFile: File): Promise<Track> => {
+  const soundBinary = await getSoundFileAsDataURI(soundFile);
+  return {
+    id: `_${Math.random()
+      .toString(36)
+      .substr(2, 9)}`,
+    file: soundBinary,
+    name: soundFile.name,
+    keycode: UNSET_KEYCODE
+  };
+};

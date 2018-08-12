@@ -2,6 +2,9 @@
 import ElectronStore = require("electron-store");
 export { ElectronStore };
 
+export const UNSET_KEYCODE = -1;
+export const VALID_EXTENSIONS = ["wav", "mp3", "ogg"];
+
 export interface BaseTrack {
   id: string;
   name: string;
